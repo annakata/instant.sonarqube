@@ -1,0 +1,55 @@
+#intent here is to provide a means to build an LTS (or even specific version) with the same config so that db updates can be executed if the prod container has not updated through an LTS yet
+ARG  BASE=latest
+FROM sonarqube:${BASE}
+
+LABEL maintainer="annakata @ github"
+
+ENV SONARQUBE_HOME /opt/sonarqube
+ENV AWS_REGION eu-west-1
+
+#install aws logs
+COPY awslogs.conf /root 
+COPY credentials ~/.aws/
+
+RUN set -x \
+	&& apt-get update \
+	&& apt-get install --no-install-recommends -y curl python cron \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py \
+	&& wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/AgentDependencies.tar.gz \
+	&& tar xvf AgentDependencies.tar.gz -C /tmp/ \
+	&& chmod +x ./awslogs-agent-setup.py \
+	&& ./awslogs-agent-setup.py --region ${AWS_REGION} --dependency-path /tmp/AgentDependencies --non-interactive --configfile=/root/awslogs.conf
+
+#install plugins...
+#badges, csharp, css/sass/less, dependency checker, javascript, ldap, php, python, rci, softvis3d, sonargraph, typescript, web, xml
+#/* because github api isn't enabled universally (and in none of these cases) you have to crawl the page and hope the latest
+# * release is stable, and built a jar, which seems to be about 50% true. So this get the plugins close to latest but requires manual 
+# * updates within the system once it's running. But at least it does the grunt work of getting *something* standardised.
+RUN set -x \
+	&& wget https://github.com/$(wget https://github.com/QualInsight/qualinsight-plugins-sonarqube-badges/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/sonar-csharp/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/SonarJS/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/SonarTS/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/sonar-php/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/sonar-python/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/sonar-web/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarSource/sonar-xml/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/racodond/sonar-css-plugin/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/stevespringett/dependency-check-sonar-plugin/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/willemsrb/sonar-rci-plugin/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/stefanrinderle/softvis3d/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget https://github.com/$(wget https://github.com/SonarQubeCommunity/sonar-sonargraph/releases/latest -O - | egrep '/.*/.*/.*jar' -o -m 1) \
+	&& wget "https://sonarsource.bintray.com/Distribution/sonar-ldap-plugin/sonar-ldap-plugin-2.2.0.608.jar" \  
+	&& mv *.jar $SONARQUBE_HOME/extensions/plugins \
+	&& ls -lah $SONARQUBE_HOME/extensions/plugins
+
+#scan
+ADD https://get.aquasec.com/microscanner /
+ARG AQUATOKEN
+RUN chmod +x /microscanner \
+	&& /microscanner ${AQUATOKEN} \
+	&& rm /microscanner
+	
+#TLS is up to the ELB, using open ports internally
+EXPOSE 9000

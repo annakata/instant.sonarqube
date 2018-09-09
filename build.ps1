@@ -1,0 +1,1 @@
+docker build -t instant.sonarqube image-src

@@ -1,0 +1,1 @@
+docker run -it -d -rm -P --name=sonar instant.sonarqube:latest
